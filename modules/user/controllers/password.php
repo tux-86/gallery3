@@ -41,9 +41,10 @@ class Password_Controller extends Controller {
     if (request::method() == "post") {
       $this->_change_password();
     } else {
-      $user = user::lookup_by_hash(Input::instance()->get("key"));
+      $key = Input::instance()->get("key");
+      $user = user::lookup_by_reset_token($key);
       if (!empty($user)) {
-        print $this->_new_password_form($user->hash);
+        print $this->_new_password_form($key);
       } else {
         throw new Exception("@todo FORBIDDEN", 503);
       }
@@ -54,23 +55,27 @@ class Password_Controller extends Controller {
     $user_name = $form->reset->inputs["name"]->value;
     $user = user::lookup_by_name($user_name);
     if ($user && !empty($user->email)) {
-      $user->hash = random::hash();
-      $user->save();
-      $message = new View("reset_password.html");
-      $message->confirm_url = url::abs_site("password/do_reset?key=$user->hash");
-      $message->user = $user;
+      // Returns null if a reset email went out for this user very recently; in that case we stay
+      // quiet (the caller still shows the generic success message) rather than letting anyone
+      // flood a user's inbox.
+      $token = user::create_reset_token($user);
+      if ($token !== null) {
+        $message = new View("reset_password.html");
+        $message->confirm_url = url::abs_site("password/do_reset?key=$token");
+        $message->user = $user;
 
-      Sendmail::factory()
-        ->to($user->email)
-        ->subject(t("Password Reset Request"))
-        ->header("Mime-Version", "1.0")
-        ->header("Content-type", "text/html; charset=UTF-8")
-        ->message($message->render())
-        ->send();
+        Sendmail::factory()
+          ->to($user->email)
+          ->subject(t("Password Reset Request"))
+          ->header("Mime-Version", "1.0")
+          ->header("Content-type", "text/html; charset=UTF-8")
+          ->message($message->render())
+          ->send();
 
-      log::success(
-        "user",
-        t("Password reset email sent for user %name", ["name" => $user->name]));
+        log::success(
+          "user",
+          t("Password reset email sent for user %name", ["name" => $user->name]));
+      }
     } else if (!$user) {
       // Don't include the username here until you're sure that it's XSS safe
       log::warning(
@@ -124,13 +129,13 @@ class Password_Controller extends Controller {
   private function _change_password() {
     $view = $this->_new_password_form();
     if ($view->content->validate()) {
-      $user = user::lookup_by_hash(Input::instance()->post("hash"));
+      $user = user::lookup_by_reset_token(Input::instance()->post("hash"));
       if (empty($user)) {
         throw new Exception("@todo FORBIDDEN", 503);
       }
 
       $user->password = $view->content->reset->password->value;
-      $user->hash = null;
+      user::clear_reset_token($user);
       $user->save();
       message::success(t("Password reset successfully"));
       url::redirect(item::root()->abs_url());

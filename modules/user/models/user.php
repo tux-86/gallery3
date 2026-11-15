@@ -31,6 +31,8 @@ class User_Model_Core extends ORM implements User_Definition {
     case "password":
       $this->password_length = strlen($value);
       $value = user::hash_password($value);
+      // Changing the password invalidates any outstanding password reset link.
+      parent::__set("hash", null);
       break;
     }
     parent::__set($column, $value);
