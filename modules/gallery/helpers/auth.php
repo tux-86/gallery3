@@ -60,17 +60,56 @@ class auth_Core {
                       "user_name" => html::clean($user->name)]));
   }
 
+  // Failed authentications are counted per (user, client address) so that one person hammering
+  // an account can't lock the real owner out, and per user from anywhere as a higher backstop
+  // against attacks spread over many addresses.  Once a counter passes its threshold, any
+  // failure within LOCKOUT_SECONDS of the last one keeps the lock going.  Counters that haven't
+  // been touched for FAILURE_DECAY_SECONDS start over.
+  const LOCKOUT_THRESHOLD = 5;
+  const LOCKOUT_THRESHOLD_ANY_ADDRESS = 30;
+  const LOCKOUT_SECONDS = 60;
+  const FAILURE_DECAY_SECONDS = 900;
+
   /**
-   * After there have been 5 failed auth attempts, any failure leads to getting locked out for a
-   * minute.
+   * Has this user (or this client address, for this user) had too many failed auth attempts?
    */
   public static function too_many_failures($name) {
-    $failed = ORM::factory("failed_auth")
-      ->where("name", "=", $name)
-      ->find();
-    return ($failed->loaded() &&
-            $failed->count > 5 &&
-            (time() - $failed->time < 60));
+    foreach (self::_failure_counters(self::_failure_subject($name)) as $key => $threshold) {
+      $failed = ORM::factory("failed_auth")->where("name", "=", $key)->find();
+      if ($failed->loaded() &&
+          $failed->count > $threshold &&
+          (time() - $failed->time < self::LOCKOUT_SECONDS)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Identify who a login attempt is against.  Existing users are identified by id, so that
+   * differently cased or accented spellings of a name (which the database treats as the same
+   * user) can't be used to dodge the counters.  Unknown names are counted too, normalized.
+   */
+  private static function _failure_subject($name) {
+    $name = (string) $name;
+    $user = identity::lookup_user_by_name($name);
+    if ($user) {
+      return "id:" . $user->id;
+    }
+    return "name:" . mb_strtolower(trim($name));
+  }
+
+  /**
+   * The counters (failed_auths.name values) that apply to this subject for the current client,
+   * mapped to the threshold at which each one locks.
+   */
+  private static function _failure_counters($subject) {
+    // REMOTE_ADDR only: forwarding headers are client controlled, so trusting them would let an
+    // attacker pick a fresh "address" for every guess.
+    $address = (string) Input::instance()->server("REMOTE_ADDR");
+    return [
+      "n:" . hash("sha256", $subject . "\0" . $address) => self::LOCKOUT_THRESHOLD,
+      "u:" . hash("sha256", $subject) => self::LOCKOUT_THRESHOLD_ANY_ADDRESS];
   }
 
   public static function validate_too_many_failed_logins($name_input) {
@@ -89,23 +128,36 @@ class auth_Core {
    * Record a failed authentication for this user
    */
   public static function record_failed_attempt($name) {
-    $failed = ORM::factory("failed_auth")
-      ->where("name", "=", $name)
-      ->find();
-    if (!$failed->loaded()) {
-      $failed->name = $name;
+    // Counters are per user and address, so unattended rows would otherwise pile up forever.
+    // Expired ones are equivalent to no row at all, so prune them now and then.
+    if (mt_rand(1, 20) === 1) {
+      ORM::factory("failed_auth")
+        ->where("time", "<", time() - self::FAILURE_DECAY_SECONDS)
+        ->delete_all();
     }
-    $failed->time = time();
-    $failed->count++;
-    $failed->save();
+
+    foreach (array_keys(self::_failure_counters(self::_failure_subject($name))) as $key) {
+      $failed = ORM::factory("failed_auth")->where("name", "=", $key)->find();
+      if (!$failed->loaded()) {
+        $failed->name = $key;
+      } else if (time() - $failed->time > self::FAILURE_DECAY_SECONDS) {
+        $failed->count = 0;
+      }
+      $failed->time = time();
+      $failed->count++;
+      $failed->save();
+    }
   }
 
   /**
-   * Clear any failed logins for this user
+   * Clear the failed logins for this user from this client address.  The user-wide counter is
+   * left to expire on its own so that someone else guessing from elsewhere can't have it wiped
+   * by the real user logging in.
    */
   public static function clear_failed_attempts($user) {
+    $counters = array_keys(self::_failure_counters("id:" . $user->id));
     ORM::factory("failed_auth")
-      ->where("name", "=", $user->name)
+      ->where("name", "=", $counters[0])
       ->delete_all();
   }
 
