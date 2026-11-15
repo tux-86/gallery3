@@ -63,6 +63,30 @@ class url extends url_Core {
   }
 
   /**
+   * Is it safe to redirect the browser to this (user supplied) url?  Only site-relative paths and
+   * absolute http(s) urls on this site's own host are; anything else could be used to bounce a
+   * user to an attacker's site.
+   */
+  public static function is_safe_redirect($url) {
+    if (!is_string($url) || $url === "" || preg_match('/[\x00-\x1f\x7f\\\\]/', $url)) {
+      return false;
+    }
+
+    if (!preg_match('#^[a-z][a-z0-9+.-]*:#i', $url)) {
+      // No scheme: allow relative paths, but not protocol-relative ("//evil.example") urls.
+      return !str_starts_with($url, "//");
+    }
+
+    $target = parse_url($url);
+    $site = parse_url(url::abs_site(""));
+    if (empty($target["scheme"]) || !in_array(strtolower($target["scheme"]), ["http", "https"]) ||
+        empty($target["host"]) || empty($site["host"]) || isset($target["user"])) {
+      return false;
+    }
+    return strtolower($target["host"]) === strtolower($site["host"]);
+  }
+
+  /**
    * Just like url::merge except that it escapes any XSS in the path.
    */
   public static function merge(array $arguments) {

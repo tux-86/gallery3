@@ -86,8 +86,10 @@ class movie_Core {
     $start_time_arg = ($duration >= $start_time + 0.1) ?
       "-ss " . movie::seconds_to_hhmmssdd($start_time) : "";
 
-    $input_args = $movie_options["input_args"] ?? "";
-    $output_args = $movie_options["output_args"] ?? "";
+    // These are free-form ffmpeg options supplied by modules, and end up in a shell command, so
+    // neutralize any shell metacharacters (;, |, &, $, `, redirections, ...).
+    $input_args = escapeshellcmd($movie_options["input_args"] ?? "");
+    $output_args = escapeshellcmd($movie_options["output_args"] ?? "");
 
     $cmd = escapeshellcmd($ffmpeg) . " $input_args -i " . escapeshellarg($input_file) .
       " -an $start_time_arg -an -r 1 -vframes 1" .

@@ -48,6 +48,11 @@ ini_set("display_errors", false);
 // Ajax code.
 ini_set("session.use_trans_sid", false);
 
+// Don't let browsers second-guess our Content-Type (e.g. treat an uploaded file as HTML), and
+// don't leak full URLs (which can contain tokens) to other sites.
+header("X-Content-Type-Options: nosniff");
+header("Referrer-Policy: strict-origin-when-cross-origin");
+
 // Restrict all response frames to the same origin for security
 header("X-Frame-Options: SAMEORIGIN");
 

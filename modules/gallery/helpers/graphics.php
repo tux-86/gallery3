@@ -429,7 +429,7 @@ class graphics_Core {
         if ($path) {
           if (@is_file($path) &&
               preg_match(
-                $settings["version_regex"], shell_exec($path . " " . $settings["version_arg"]), $matches)) {
+                $settings["version_regex"], shell_exec(escapeshellarg($path) . " " . $settings["version_arg"]), $matches)) {
             $version = $matches[1];
 
             $toolkits->$index->installed = true;

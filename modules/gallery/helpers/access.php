@@ -421,7 +421,13 @@ class access_Core {
    */
   public static function verify_csrf() {
     $input = Input::instance();
-    if ($input->post("csrf", $input->get("csrf", null)) !== Session::instance()->get("csrf")) {
+    $expected = Session::instance()->get("csrf");
+    $provided = $input->post("csrf", $input->get("csrf", null));
+
+    // A missing token must never validate (previously null === null passed for sessions that
+    // hadn't been issued a token yet), and the comparison must not leak timing information.
+    if (!is_string($expected) || $expected === "" || !is_string($provided) ||
+        !hash_equals($expected, $provided)) {
       access::forbidden();
     }
   }

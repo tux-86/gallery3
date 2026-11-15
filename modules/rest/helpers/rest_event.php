@@ -25,8 +25,21 @@ class rest_event {
   public static function user_before_delete($user) {
     db::build()
       ->delete("user_access_keys")
-       ->where("id", "=", $user->id)
+       ->where("user_id", "=", $user->id)
        ->execute();
+  }
+
+  /**
+   * When a user's password changes, retire their REST access key so that a stolen key doesn't
+   * outlive the password.  The next REST login (or visit to the profile page) issues a new one.
+   */
+  public static function user_updated($original, $updated) {
+    if ($original->password !== $updated->password) {
+      db::build()
+        ->delete("user_access_keys")
+        ->where("user_id", "=", $updated->id)
+        ->execute();
+    }
   }
 
 
