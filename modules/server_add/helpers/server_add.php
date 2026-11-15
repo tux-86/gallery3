@@ -31,13 +31,25 @@ class server_add_Core {
   }
 
   public static function is_valid_path($path) {
-    if (!is_readable($path) || is_link($path)) {
+    if (!is_string($path) || !is_readable($path) || is_link($path)) {
+      return false;
+    }
+
+    // Compare canonical paths so that ".." segments and symlinked parents can't escape an
+    // authorized directory, and so "/srv/photos" doesn't also authorize "/srv/photos-private".
+    $real_path = realpath($path);
+    if ($real_path === false) {
       return false;
     }
 
     $authorized_paths = unserialize(module::get_var("server_add", "authorized_paths"));
     foreach (array_keys($authorized_paths) as $valid_path) {
-      if (str_starts_with($path, $valid_path)) {
+      $real_valid_path = realpath($valid_path);
+      if ($real_valid_path === false) {
+        continue;
+      }
+      if ($real_path === $real_valid_path ||
+          str_starts_with($real_path, rtrim($real_valid_path, "/") . "/")) {
         return true;
       }
     }

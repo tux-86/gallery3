@@ -47,9 +47,13 @@ class rest_Core {
     case "html":
       header("Content-type: text/html; charset=UTF-8");
       if ($data) {
+        // Escape everything first: $data contains attacker-influenced strings (the request URL,
+        // item titles, etc).  Only then turn http(s) URLs into links.  The escaped text has no
+        // raw quotes or angle brackets, so the href attribute cannot be broken out of; stop at the
+        // escaped quote entities that var_export() puts around string values.
         $html = preg_replace(
-          "#([\w]+?://[\w]+[^ \'\"\n\r\t<]*)#is", "'<a href=\"\\1\" >\\1</a>'",
-          var_export($data, 1));
+          "#(https?://[\w](?:(?!&\#039;|&quot;)[^\s<])*)#i", "<a href=\"\\1\">\\1</a>",
+          htmlspecialchars(var_export($data, 1), ENT_QUOTES, "UTF-8"));
       } else {
         $html = t("Empty response");
       }
