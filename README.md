@@ -56,6 +56,21 @@ For docker installations:
 
   https://hub.docker.com/r/bwdutton/gallery3
 
+### Running behind a reverse proxy
+
+If Gallery sits behind a reverse proxy, load balancer or CDN, every visitor appears to
+come from the proxy's address, so per-client protections (such as the failed login
+lockout) can't tell visitors apart.  Tell Gallery which proxies to trust by creating
+`var/proxy.php`:
+```php
+<?php
+$config["trusted_proxies"] = ["10.0.0.5", "192.168.1.0/24"];  // IPs or CIDR ranges
+// $config["forwarded_header"] = "HTTP_X_FORWARDED_FOR";      // default
+```
+Only list proxies you control, and make sure they set or append to the forwarding header
+rather than passing on whatever the visitor sent.  Requests from any other address are
+never allowed to choose their own client address.  See `modules/gallery/config/proxy.php`.
+
 For comprehensive instructions, The online User Guide is your best resource:
 
   http://codex.galleryproject.org/Gallery3:User_guide

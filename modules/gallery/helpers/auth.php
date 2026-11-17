@@ -104,9 +104,11 @@ class auth_Core {
    * mapped to the threshold at which each one locks.
    */
   private static function _failure_counters($subject) {
-    // REMOTE_ADDR only: forwarding headers are client controlled, so trusting them would let an
-    // attacker pick a fresh "address" for every guess.
-    $address = (string) Input::instance()->server("REMOTE_ADDR");
+    // Input::ip_address() is REMOTE_ADDR unless the request came through a reverse proxy the
+    // admin has listed as trusted (see config/proxy.php), because forwarding headers are client
+    // controlled and trusting them blindly would let an attacker pick a fresh "address" for
+    // every guess.  IPv6 clients are grouped by /64 for the same reason.
+    $address = Input::client_network(Input::instance()->ip_address());
     return [
       "n:" . hash("sha256", $subject . "\0" . $address) => self::LOCKOUT_THRESHOLD,
       "u:" . hash("sha256", $subject) => self::LOCKOUT_THRESHOLD_ANY_ADDRESS];
